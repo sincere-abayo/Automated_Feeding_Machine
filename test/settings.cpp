@@ -10,16 +10,14 @@
 #define IN3 26
 #define IN4 27
 #define ENB 25
-const int forwardSensorPin = 34;  // First sensor for feeding
-const int backwardSensorPin = 35; // Second sensor for retracting
 
 const int motorSpeed = 150;
 const int feedingTime = 10000;      // 10 seconds fixed for feeding
 const int retractTime = 8000;       // 8 seconds fixed for retracting
 
 // Adjustable times (in seconds)
-int eatingTime = 10;    // Default 30 seconds
-int shiftDelay = 10;   // Default 120 seconds (2 minutes)
+int eatingTime = 30;    // Default 30 seconds
+int shiftDelay = 120;   // Default 120 seconds (2 minutes)
 
 const uint8_t KEYPAD_ADDRESS = 0x20;
 const uint8_t LCD_ADDRESS = 0x27;
@@ -64,9 +62,8 @@ void runFeedingCycle() {
     digitalWrite(IN4, LOW);
     analogWrite(ENA, motorSpeed);
     analogWrite(ENB, motorSpeed);
-    while(digitalRead(forwardSensorPin) == 1) {
-        delay(50); // Small delay for stability
-    }
+    delay(feedingTime);
+
     // Eating time
     lcd.clear();
     lcd.print("Eating time:");
@@ -90,10 +87,7 @@ void runFeedingCycle() {
     digitalWrite(IN4, HIGH);
     analogWrite(ENA, motorSpeed);
     analogWrite(ENB, motorSpeed);
-     while(digitalRead(backwardSensorPin) == 1) {
-        delay(50); // Small delay for stability
-    }
-
+    delay(retractTime);
 
     // Shift delay
     lcd.clear();
@@ -163,8 +157,7 @@ void setup() {
     Serial.begin(115200);
     Wire.begin(21, 22);
     Wire.setClock(400000);
-    pinMode(forwardSensorPin, INPUT);
-    pinMode(backwardSensorPin, INPUT);
+
     setupMotor();
     
     lcd.init();
