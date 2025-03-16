@@ -7,10 +7,9 @@
 #define IN1 12
 #define IN2 14
 #define ENA 13
-#define IN3 27
-#define IN4 26
+#define IN3 26
+#define IN4 27
 #define ENB 25
-
 const int forwardSensorPin = 34;  // First sensor for feeding
 const int backwardSensorPin = 35; // Second sensor for retracting
 
@@ -31,14 +30,12 @@ LiquidCrystal_I2C lcd(LCD_ADDRESS, 16, 2);
 uint32_t lastKeyPressed = 0;
 const char KEYPAD_MAPPING[] = "123A456B789C*0#DNF";  // 12 keys total for 4x3 keypad
 
+
 String inputBuffer = "";
 bool settingMode = false;
 int menuState = 0; // 0: main, 1: eating time, 2: shift delay
 
 bool feedingActive = false;
-bool manualMode = false;  // false = automatic, true = manual
-bool modeSelected = false;  // Whether the user has selected a mode
-bool manualFeedingInProgress = false;  // For manual feeding state tracking
 
 void setupMotor() {
     pinMode(IN1, OUTPUT);
@@ -49,36 +46,16 @@ void setupMotor() {
     pinMode(ENB, OUTPUT);
 }
 
-void displayModeSelection() {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Select Mode:");
-    lcd.setCursor(0, 1);
-    lcd.print("1:Auto  2:Manual");
-}
-
 void displayMainMenu() {
     lcd.clear();
-    if (manualMode) {
-        lcd.setCursor(0, 0);
-        lcd.print("Manual Mode");
-        lcd.setCursor(0, 1);
-        lcd.print("*:Feed 0:home");
-        // delay(2000);
-        // lcd.clear();
-        // lcd.setCursor(0, 0);
-        // lcd.print("0:Back to Mode");
-        // lcd.setCursor(0, 1);
-        // lcd.print("Selection");
-    } else {
-        lcd.setCursor(0, 0);
-        lcd.print("1:Eating 2:Shift");
-        lcd.setCursor(0, 1);
-        lcd.print("*:0:Back");
-    }
+    lcd.setCursor(0, 0);
+    lcd.print("1:Eating Time");
+    lcd.setCursor(0, 1);
+    lcd.print("2:Shift Delay");
 }
 
-void startFeeding() {
+void runFeedingCycle() {
+    // Forward
     lcd.clear();
     lcd.print("Feeding...");
     digitalWrite(IN1, HIGH);
@@ -87,18 +64,24 @@ void startFeeding() {
     digitalWrite(IN4, LOW);
     analogWrite(ENA, motorSpeed);
     analogWrite(ENB, motorSpeed);
-}
-
-void stopMotors() {
+    while(digitalRead(forwardSensorPin) == 1) {
+        delay(50); // Small delay for stability
+    }
+    // Eating time
+    lcd.clear();
+    lcd.print("Eating time:");
+    lcd.setCursor(0, 1);
+    lcd.print(eatingTime);
+    lcd.print(" seconds");
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, LOW);
     digitalWrite(IN3, LOW);
     digitalWrite(IN4, LOW);
     analogWrite(ENA, 0);
     analogWrite(ENB, 0);
-}
+    delay(eatingTime * 1000);
 
-void startRetracting() {
+    // Backward
     lcd.clear();
     lcd.print("Retracting...");
     digitalWrite(IN1, LOW);
@@ -107,30 +90,10 @@ void startRetracting() {
     digitalWrite(IN4, HIGH);
     analogWrite(ENA, motorSpeed);
     analogWrite(ENB, motorSpeed);
-}
-
-void runFeedingCycle() {
-    // Forward
-    startFeeding();
-    while(digitalRead(forwardSensorPin) == 1) {
+     while(digitalRead(backwardSensorPin) == 1) {
         delay(50); // Small delay for stability
     }
-    
-    // Eating time
-    lcd.clear();
-    lcd.print("Eating time:");
-    lcd.setCursor(0, 1);
-    lcd.print(eatingTime);
-    lcd.print(" seconds");
-    stopMotors();
-    delay(eatingTime * 1000);
 
-    // Backward
-    startRetracting();
-    while(digitalRead(backwardSensorPin) == 1) {
-        delay(50); // Small delay for stability
-    }
-    stopMotors();
 
     // Shift delay
     lcd.clear();
@@ -138,47 +101,16 @@ void runFeedingCycle() {
     lcd.setCursor(0, 1);
     lcd.print(shiftDelay);
     lcd.print(" seconds");
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, LOW);
+    analogWrite(ENA, 0);
+    analogWrite(ENB, 0);
     delay(shiftDelay * 1000);
 }
 
-void handleManualMode(char key) {
-    if (key == '*') {
-        if (!manualFeedingInProgress) {
-            // Start feeding
-            manualFeedingInProgress = true;
-            startFeeding();
-        }
-    } else if (key == '#') {
-        // Allow retraction regardless of feeding state
-        manualFeedingInProgress = false;
-        startRetracting();
-        
-        // Wait for backward sensor
-        while(digitalRead(backwardSensorPin) == 1) {
-            delay(50);
-        }
-        stopMotors();
-        lcd.clear();
-        lcd.print("Ready for next");
-        lcd.setCursor(0, 1);
-        lcd.print("feeding");
-        delay(2000);
-        displayMainMenu();
-    } else if (key == '0') {
-        // Return to mode selection
-        modeSelected = false;
-        manualFeedingInProgress = false;
-        stopMotors();
-        lcd.clear();
-        lcd.print("Returning to");
-        lcd.setCursor(0, 1);
-        lcd.print("mode selection");
-        delay(1500);
-        displayModeSelection();
-    }
-}
-
-void handleAutoMode(char key) {
+void handleKeyPress(char key) {
     if (settingMode) {
         if (key >= '0' && key <= '9') {
             inputBuffer += key;
@@ -223,43 +155,6 @@ void handleAutoMode(char key) {
                 delay(1000);
             }
             displayMainMenu();
-        } else if (key == '0') {
-            // Return to mode selection
-            modeSelected = false;
-            feedingActive = false;
-            stopMotors();
-            lcd.clear();
-            lcd.print("Returning to");
-            lcd.setCursor(0, 1);
-            lcd.print("mode selection");
-            delay(1500);
-            displayModeSelection();
-        }
-    }
-}
-
-void handleKeyPress(char key) {
-    if (!modeSelected) {
-        if (key == '1') {
-            manualMode = false;
-            modeSelected = true;
-            lcd.clear();
-            lcd.print("Auto Mode Set");
-            delay(1500);
-            displayMainMenu();
-        } else if (key == '2') {
-            manualMode = true;
-            modeSelected = true;
-            lcd.clear();
-            lcd.print("Manual Mode Set");
-            delay(1500);
-            displayMainMenu();
-        }
-    } else {
-        if (manualMode) {
-            handleManualMode(key);
-        } else {
-            handleAutoMode(key);
         }
     }
 }
@@ -285,7 +180,7 @@ void setup() {
         while (1);
     }
 
-    displayModeSelection();
+    displayMainMenu();
 }
 
 void loop() {
@@ -301,21 +196,8 @@ void loop() {
             }
         }
     }
-    
-    // Check sensor in manual mode
-    if (manualMode && manualFeedingInProgress) {
-        if (digitalRead(forwardSensorPin) == 0) {
-            // Sensor triggered, stop the motors
-            stopMotors();
-            lcd.clear();
-            lcd.print("Feed position");
-            lcd.setCursor(0, 1);
-            lcd.print("Press # to retract");
-        }
-    }
-    
-    // Automatic feeding cycle
-    if (!manualMode && feedingActive) {
+     // Automatic feeding cycle
+    if (feedingActive) {
         runFeedingCycle();
     }
 }
